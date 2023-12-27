@@ -26,6 +26,7 @@ HWND hwndTextBox2; // 文本框2句柄
 
 HANDLE hProcess = NULL; // 获取选中进程的句柄
 FARPROC pFunction = NULL; // 目标函数的地址
+HMODULE hModule = NULL;
 
 
 // 此代码模块中包含的函数的前向声明:
@@ -83,6 +84,14 @@ void ListProcesses(HWND hListBox) {
 
 */
 
+void AppendTextToTextBox2(const wchar_t* text)
+{
+    int textLength = GetWindowTextLength(hwndTextBox2);
+    SendMessage(hwndTextBox2, EM_SETSEL, textLength, textLength);
+    SendMessage(hwndTextBox2, EM_REPLACESEL, FALSE, (LPARAM)text);
+}
+
+
 /*=========================================== 获取当前所有进程（除了一些系统进程） ==========================================*/
 
 int ProcessIDList[1024] = {};
@@ -93,6 +102,7 @@ void ListProcesses(HWND hListBox) {
 
     if (hSnapshot == INVALID_HANDLE_VALUE) {
         perror("CreateToolhelp32Snapshot");
+        SetWindowText(hwndTextBox2, L"[ERROR] CreateToolhelp32Snapshot has been failed！\r\n=============================\r\n");
         return;
     }
 
@@ -194,6 +204,7 @@ WCHAR* GetProcessInfo(DWORD pid)
         {
             char szError[256];
             sprintf(szError, "Failed to retrieve process image path. Error: %d\n", GetLastError());
+            SetWindowText(hwndTextBox2, L"[ERROR] Failed to retrieve process image path\r\n=============================\r\n");
             processInfo = szError;
         }
 
@@ -203,6 +214,7 @@ WCHAR* GetProcessInfo(DWORD pid)
     {
         char szError[256];
         sprintf(szError, "Failed to open the process. Error: %d\n", GetLastError());
+        SetWindowText(hwndTextBox2, L"[ERROR] Failed to open the process.\r\n=============================\r\n");
         processInfo = szError;
     }
 
@@ -278,7 +290,8 @@ bool GetFunctionModuleAndAddress(HANDLE hProcess, const char* moduleName, const 
         // 输出错误码，可通过返回的int确定API函数报错原因
         // 当错误码为6时，说明句柄无效，即为hProcess的问题
         // 当错误码为299时，尝试读取进程模块信息时发生了部分复制错误，多半是架构不同
-        printf("EnumProcessModules failed with error code %d\n", dwError);
+        SetWindowText(hwndTextBox2, L"[ERROR] EnumProcessModules failed with error code\r\n=============================\r\n");
+        // printf("EnumProcessModules failed with error code %d\n", dwError);
         return false;
     }
 
@@ -427,16 +440,16 @@ void hookWinAPI(HANDLE hProcess, FARPROC pFunction) {
 // inline：不会存在对 getLoadLibraryAddress 函数的显式调用，而是直接插入了 getLibraryProcAddress("kernel32.dll", "LoadLibraryA") 的代码
 inline FARPROC getLoadLibraryAddress()
 {
-    return getLibraryProcAddress("kernel32.dll", "LoadLibraryA");
+    return getLibraryProcAddress("kernel32.dll", "LoadLibraryW");
 }
 
 
-// DLL注入hook实现
+// DLL注入hook实现(NOT work)
 void injectWithRemoteThread(PROCESS_INFORMATION& pi, const char* dllPath)
 {
     //申请dll路径的内存，获取LoadLibraryA地址
-    SetWindowText(hwndTextBox2, L"Allocating Remote Memory For dll path\r\n=============================\r\n");
-    puts("Allocating Remote Memory For dll path");
+    AppendTextToTextBox2(L"Allocating Remote Memory For dll path\r\n=============================\r\n");
+    // puts("Allocating Remote Memory For dll path");
     const int bufferSize = strlen(dllPath) + 1;
     
     VirtualMemory dllPathMemory(pi.hProcess, bufferSize, PAGE_READWRITE);
@@ -445,30 +458,109 @@ void injectWithRemoteThread(PROCESS_INFORMATION& pi, const char* dllPath)
     PTHREAD_START_ROUTINE startRoutine = (PTHREAD_START_ROUTINE)pFunction;
 
     //用dll路径和LoadLibraryA的地址创建远程线程
-    puts("Creatint remote thread");
-    SetWindowText(hwndTextBox2, L"Creatint remote thread\r\n=============================\r\n");
+    // puts("Creatint remote thread");
+    AppendTextToTextBox2(L"Creatint remote thread\r\n=============================\r\n");
 
     HANDLE remoteThreadHandle = CreateRemoteThread(
         pi.hProcess, NULL, NULL, startRoutine, dllPathMemory.getAddress(), CREATE_SUSPENDED, NULL);
     if (remoteThreadHandle == NULL) {
-        throw std::runtime_error("Failed to create remote thread!");
+        throw std::runtime_error("[ERROR] Failed to create remote thread!");
     }
 
     //继续远程线程以执行LoadLibraryA，等待其执行完毕
-    puts("Resume remote thread");
-    SetWindowText(hwndTextBox2, L"Resume remote thread\r\n=============================\r\n");
+    // puts("Resume remote thread");
+    AppendTextToTextBox2(L"Resume remote thread\r\n=============================\r\n");
     ResumeThread(remoteThreadHandle);
     WaitForSingleObject(remoteThreadHandle, INFINITE);
     CloseHandle(remoteThreadHandle);
 
     //继续主线程
     puts("Resume main thread");
-    SetWindowText(hwndTextBox2, L"Resume main thread\r\n=============================\r\n");
+    AppendTextToTextBox2(L"Resume main thread\r\n=============================\r\n");
     ResumeThread(pi.hThread);
 }
 
 
 
+// 使用创建远程线程的方式实现DLL注入 
+bool RemoteThreadInject(DWORD targetProcessId, const char* dllPath)
+{
+    // 打开目标进程
+    HANDLE hProcess = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ, FALSE, targetProcessId);
+    if (hProcess == NULL)
+    {
+        // 处理打开进程失败的情况
+        return false;
+    }
+
+    // 在目标进程中分配内存
+    size_t dllPathLength = strlen(dllPath) + 1;
+    LPVOID pRemoteMemory = VirtualAllocEx(hProcess, NULL, dllPathLength, MEM_COMMIT, PAGE_READWRITE);
+    if (pRemoteMemory == NULL)
+    {
+        // 处理内存分配失败的情况
+        AppendTextToTextBox2(L"[ERROR] 在目标进程中分配内存空间失败\r\n=============================\r\n");
+        CloseHandle(hProcess);
+        return false;
+    }
+
+    // 将DLL路径写入目标进程的内存中
+    SIZE_T bytesRead;
+    if (!WriteProcessMemory(hProcess, pRemoteMemory, dllPath, dllPathLength, &bytesRead) || bytesRead != dllPathLength)
+    {
+        // 处理写入内存失败的情况
+        AppendTextToTextBox2(L"[ERROR] 在目标进程中写入内存空间失败\r\n=============================\r\n");
+        VirtualFreeEx(hProcess, pRemoteMemory, 0, MEM_RELEASE);
+        CloseHandle(hProcess);
+        return false;
+    }
+
+    // 获取LoadLibrary函数地址
+    HMODULE hKernel32 = GetModuleHandle(L"kernel32.dll");
+    if (hKernel32 == NULL)
+    {
+        // 处理获取kernel32模块句柄失败的情况
+        AppendTextToTextBox2(L"[ERROR] 获取kernel32模块句柄失败\r\n=============================\r\n");
+        VirtualFreeEx(hProcess, pRemoteMemory, 0, MEM_RELEASE);
+        CloseHandle(hProcess);
+        return false;
+    }
+
+    FARPROC pLoadLibrary = GetProcAddress(hKernel32, "LoadLibraryA");
+    if (pLoadLibrary == NULL)
+    {
+        // 处理获取LoadLibrary函数地址失败的情况
+        AppendTextToTextBox2(L"[ERROR] 获取LoadLibrary函数地址失败\r\n=============================\r\n");
+        VirtualFreeEx(hProcess, pRemoteMemory, 0, MEM_RELEASE);
+        CloseHandle(hProcess);
+        return false;
+    }
+
+    // 在目标进程中创建远程线程执行LoadLibrary函数
+    HANDLE hRemoteThread = CreateRemoteThread(hProcess, NULL, 0, reinterpret_cast<LPTHREAD_START_ROUTINE>(pLoadLibrary), pRemoteMemory, 0, NULL);
+    if (hRemoteThread == NULL)
+    {
+        // 处理创建远程线程失败的情况
+        AppendTextToTextBox2(L"[ERROR] 创建远程线程失败\r\n=============================\r\n");
+        VirtualFreeEx(hProcess, pRemoteMemory, 0, MEM_RELEASE);
+        CloseHandle(hProcess);
+        return false;
+    }
+
+    // 等待远程线程结束
+    WaitForSingleObject(hRemoteThread, INFINITE);
+
+    // 关闭句柄
+    CloseHandle(hRemoteThread);
+
+    // 释放内存
+    VirtualFreeEx(hProcess, pRemoteMemory, 0, MEM_RELEASE);
+
+    // 关闭进程句柄
+    CloseHandle(hProcess);
+
+    return true;
+}
 
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
@@ -628,10 +720,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             break;
         /* ===================================== 接受注入到目标进程的DLL返回的Hooked API数据 ================================*/
         case WM_HOOKED_MESSAGE:
-            SetWindowText(hwndTextBox2, L"接受到DLL的消息\r\n================\r\n");
+            AppendTextToTextBox2(L"Hooked API被调用了！\r\n=============================\r\n");
             if (wParam != NULL) {
                 LPCSTR lpText = static_cast<LPCSTR>(((COPYDATASTRUCT*)lParam)->lpData);
-                // 处理收到的数据
+                // 处理收到的数据(NOT work)，此处接收不到数据，待处理
                 MessageBoxA(hWnd, lpText, "Received data", MB_OK);
             }
             break;
@@ -687,54 +779,38 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
                     /*======================================= Hook API开始 ===============================================*/
 
-                    // 获取目标函数所在的模块句柄
-                    HMODULE hModule = NULL;
-
-                    hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
+                    hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
+                    // 这里配置权限可以使用 | (或)运算符来将几个权限叠加起来传递，有更好的可读性
 
                     if (IsProcessUsingDll(hProcess, "user32.dll")) {
                         // 获取到目标函数所在的模块和地址
                         GetFunctionModuleAndAddress(hProcess, "user32.dll", "MessageBoxA", &hModule, &pFunction);
                     }
 
-                    // 备份原始函数的机器码
-                    // BYTE* pOriginalCode = BackupOriginalFunction(hProcess, pFunction, 128);
-
                     // 直接使用inline方式hook指定进程
                     // hookWinAPI(hProcess, pFunction);
 
-                    MessageBoxA(hWnd, "开始注入进程", "Hooker", MB_OK);
+                    AppendTextToTextBox2(L"开始将DLL注入指定进程\r\n=============================\r\n");
 
-                    HANDLE hThread = NULL;
-                    HMODULE hMod = NULL;
-                    LPVOID pRemoteBuf = NULL;
-                    LPCTSTR  szDllPath = L"HookDll.dll";
-
-                    DWORD dwBufSize = (DWORD)(_tcslen(szDllPath) + 1) * sizeof(TCHAR);
-                    LPTHREAD_START_ROUTINE pThreadProc;
-
-                    // Allocate memory in the remote process big enough for the DLL path name
-                    pRemoteBuf = VirtualAllocEx(hProcess, NULL, dwBufSize, MEM_COMMIT, PAGE_READWRITE);
-
-                    // Write the DLL path name to the space allocated in the target process
-                    WriteProcessMemory(hProcess, pRemoteBuf, (LPVOID)szDllPath, dwBufSize, NULL);
+                    // 注意：注入的DLL文件路径很重要，应该为被注入的可执行文件的相对路径
+                    if (RemoteThreadInject(pid, "HookDll.dll"))
+                    {
+                        AppendTextToTextBox2(L"DLL注入完成\r\n=============================\r\n");
+                    }
+                    else {
+                        AppendTextToTextBox2(L"[ERROR] DLL注入失败\r\n=============================\r\n");
+                    }
+                    // MessageBoxA(hWnd, "开始注入进程", "Hooker", MB_OK);
 
                     // Find the address of LoadLibrary in target process(same to this process)
-                    hMod = GetModuleHandle(L"kernel32.dll");
-                    pThreadProc = (LPTHREAD_START_ROUTINE)GetProcAddress(hMod, "LoadLibraryW");
+                    // LoadLibraryW 函数位于 kernel32.dll 中，并且系统核心 DLL 会加载到固定地址，所以系统中所有进程的 LoadLibraryW 函数地址是相同的。
+                    // 用 GetProcAddress 函数获取本地进程 LoadLibraryW 地址即可。
 
-                    // Create a remote thread in target process
-                    hThread = CreateRemoteThread(hProcess, NULL, 0, pThreadProc, pRemoteBuf, 0, NULL);
-
-                    WaitForSingleObject(hThread, INFINITE);
-                    CloseHandle(hThread);
-                    VirtualFreeEx(hProcess, pRemoteBuf, 0, MEM_RELEASE);
 
                     //ChildProcess process = ChildProcess::OpenFromHandle(hProcess);
                     //injectWithRemoteThread(process.getProcessInformation(), "HookDll.dll");
 
                     CloseHandle(hProcess);
-
 
 
                     // 在窗口中显示选中项的文本

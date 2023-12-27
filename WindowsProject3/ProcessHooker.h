@@ -34,6 +34,7 @@ public:
 		address = VirtualAllocEx(process, NULL, size, MEM_COMMIT, protectFlag);
 		if (address == NULL)
 			throw std::runtime_error("Failed to allocate virtual memory!");
+			// ±¨´í´íÎóÂëÎª6
 	}
 	~VirtualMemory()
 	{

@@ -46,7 +46,7 @@ void WriteToSharedMemory(LPCSTR lpText) {
 }
 
 
-/*============================================= 通过写入指定文件数据实现进程通信(NOT Work) ==========================================*/
+/*============================= 通过写入指定文件数据实现进程通信(Work, but actually not been used) ===========================*/
 void writeText2File(LPCSTR lpText) {
     std::ofstream myfile("example.txt"); // 新建文件example.txt，以写入模式打开
     if (myfile.is_open()) { // 检查文件是否成功打开
@@ -72,7 +72,7 @@ int __stdcall HookedMessageBox(HWND hwnd, LPCSTR lpText, LPCSTR lpCaption, UINT 
     
     // SetWindowText(hwndTextBox2, lpText);
     UnHook();
-    MessageBoxA(NULL, lpText, "GET IT", MB_OK);
+    // MessageBoxA(NULL, lpText, "GET IT", MB_OK);
 
     /*==================================== 通过向指定窗口进程发送消息实现进程通信(Work) =================================*/
     HWND targetHwnd = FindWindow(NULL, L"ProcessHooker"); // 根据窗口标题查找目标窗口句柄
@@ -82,7 +82,8 @@ int __stdcall HookedMessageBox(HWND hwnd, LPCSTR lpText, LPCSTR lpCaption, UINT 
         cds.cbData = strlen(lpText) + 1; // 字符串长度
         cds.lpData = (LPVOID)lpText; // 字符串数据
         SendMessage(targetHwnd, WM_HOOKED_MESSAGE, (WPARAM)hwnd, (LPARAM)&cds); // 发送消息
-        MessageBoxA(NULL, "发送消息完成", "Hooker", MB_OK);
+        // 发送数据(NOT work)，此处接收不到数据，待处理
+        // MessageBoxA(NULL, "发送消息完成", "Hooker", MB_OK);
     }
 
     // call the original MessageBoxA
