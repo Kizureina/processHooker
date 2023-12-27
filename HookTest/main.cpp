@@ -1,4 +1,5 @@
 #define _CRT_SECURE_NO_WARNINGS 1
+#define _CRT_NON_CONFORMING_SWPRINTFS 1
 #include <iostream>
 #include <Windows.h>
 #include "../HookDll/HookDll.h"
@@ -11,6 +12,7 @@ FARPROC pFunction = NULL;
 SIZE_T bytesWritten = 0;
 char messageBoxOriginalBytes[6] = {};
 
+void CopyTextToClipboard(const wchar_t* text);
 
 void writeText2File(LPCSTR lpText) {
     std::ofstream myfile("example.txt"); // 新建文件example.txt，以写入模式打开
@@ -209,6 +211,110 @@ bool RemoteThreadInject(DWORD targetProcessId, const char* dllPath)
     return true;
 }
 
+/*=========================================== 发送消息的函数 ========================================================*/
+// 定义自定义消息
+const UINT WM_HOOKED_MESSAGE = WM_APP + 1; // 自定义消息
+
+// 定义数据结构
+struct MyData1
+{
+    int intValue;
+    float floatValue;
+    char stringValue[256];
+};
+
+void SendCustomMessage()
+{
+    HWND targetHwnd = FindWindow(NULL, L"ProcessHooker"); // 根据窗口标题查找目标窗口句柄
+    if (targetHwnd != NULL) {
+
+        WCHAR buffer[] = L"Hello world";
+        CopyTextToClipboard(buffer);
+
+        COPYDATASTRUCT cds = { 0 };
+        cds.dwData = 0; // 自定义数据
+        cds.cbData = strlen("test") + 1; // 字符串长度
+        cds.lpData = (LPVOID)"test"; // 字符串数据
+
+        SendMessage(targetHwnd, WM_HOOKED_MESSAGE, 0, (LPARAM)&cds); // 发送消息
+        // 发送数据(NOT work)，此处接收不到数据，待处理
+        // MessageBoxA(NULL, "发送消息完成", "Hooker", MB_OK);
+    }
+}
+
+#define BUFSIZE 512
+
+int writeData2Pipe()
+{
+    HANDLE hPipe;
+    DWORD dwWritten;
+    WCHAR buffer[512];
+
+    // 创建命名管道
+    hPipe = CreateNamedPipe(TEXT("\\\\.\\pipe\\MyPipe"), PIPE_ACCESS_OUTBOUND, PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT, PIPE_UNLIMITED_INSTANCES, BUFSIZE, BUFSIZE, 0, NULL);
+
+    if (hPipe == INVALID_HANDLE_VALUE)
+    {
+        printf("Failed to create named pipe. Error code: %d\n", GetLastError());
+        return 1;
+    }
+
+    // 连接到命名管道
+    if (ConnectNamedPipe(hPipe, NULL))
+    {
+        printf("Connected to named pipe.\n");
+
+        // 向命名管道写入数据
+        swprintf(buffer, L"Hello from the pipe!");
+        if (WriteFile(hPipe, buffer, BUFSIZE, &dwWritten, NULL))
+        {
+            printf("Data written to pipe: %s\n", buffer);
+        }
+        else
+        {
+            printf("Failed to write data to pipe. Error code: %d\n", GetLastError());
+        }
+        SendCustomMessage();
+
+        // 断开命名管道连接
+        DisconnectNamedPipe(hPipe);
+    }
+    else
+    {
+        printf("Failed to connect to named pipe. Error code: %d\n", GetLastError());
+    }
+
+    // 关闭命名管道句柄
+    CloseHandle(hPipe);
+}
+
+
+void CopyTextToClipboard(const wchar_t* text)
+{
+    // 打开剪贴板
+    if (OpenClipboard(nullptr))
+    {
+        // 清空剪贴板
+        EmptyClipboard();
+
+        // 分配全局内存
+        HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, (wcslen(text) + 1) * sizeof(wchar_t));
+        if (hMem)
+        {
+            // 锁定内存并写入数据
+            wchar_t* pMem = static_cast<wchar_t*>(GlobalLock(hMem));
+            wcscpy_s(pMem, wcslen(text) + 1, text);
+            GlobalUnlock(hMem);
+
+            // 将数据放入剪贴板
+            SetClipboardData(CF_UNICODETEXT, hMem);
+        }
+
+        // 关闭剪贴板
+        CloseClipboard();
+    }
+}
+
 
 int main()
 {
@@ -218,8 +324,12 @@ int main()
     HookAPI();
     MessageBoxA(NULL, "Hi", "test11", MB_OK);
     */
+    SendCustomMessage();
+    /*
     if (RemoteThreadInject(30192, "HookDll.dll")) {
         printf("注入成功！\n");
     }
+    */
+    
     return 0;
 }

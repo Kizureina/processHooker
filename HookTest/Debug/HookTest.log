@@ -1,2 +1,8 @@
 ﻿  main.cpp
+C:\Users\Yoruko\source\repos\WindowsProject3\HookTest\main.cpp(271,20): warning C4477: “printf”: 格式字符串“%s”需要类型“char *”的参数，但可变参数 1 拥有了类型“WCHAR *”
+C:\Users\Yoruko\source\repos\WindowsProject3\HookTest\main.cpp(271,20): message : 请考虑在格式字符串中使用“%ls”
+C:\Users\Yoruko\source\repos\WindowsProject3\HookTest\main.cpp(271,20): message : 请考虑在格式字符串中使用“%lls”
+C:\Users\Yoruko\source\repos\WindowsProject3\HookTest\main.cpp(271,20): message : 请考虑在格式字符串中使用“%Ls”
+C:\Users\Yoruko\source\repos\WindowsProject3\HookTest\main.cpp(271,20): message : 请考虑在格式字符串中使用“%ws”
+C:\Users\Yoruko\source\repos\WindowsProject3\HookTest\main.cpp(289): warning C4715: “writeData2Pipe”: 不是所有的控件路径都返回值
   HookTest.vcxproj -> C:\Users\Yoruko\source\repos\WindowsProject3\Debug\HookTest.exe

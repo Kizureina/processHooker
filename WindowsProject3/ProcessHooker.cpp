@@ -12,21 +12,34 @@
 #include <iostream>
 #include <string>
 #include <sstream>
+#include <gdiplus.h>
 
 #define MAX_LOADSTRING 100
+#define BUFSIZE 512
 
 // 全局变量:
 HINSTANCE hInst;                                // 当前实例
 WCHAR szTitle[MAX_LOADSTRING];                  // 标题栏文本
 WCHAR szWindowClass[MAX_LOADSTRING];            // 主窗口类名
 
+/*窗口句柄*/
 HWND hListBox;  //  ListBox 句柄
 HWND hwndTextBox1; // 文本框1句柄
 HWND hwndTextBox2; // 文本框2句柄
+HWND btn; // 按钮句柄
 
 HANDLE hProcess = NULL; // 获取选中进程的句柄
 FARPROC pFunction = NULL; // 目标函数的地址
 HMODULE hModule = NULL;
+
+
+// 定义接受消息的数据结构
+struct MyData
+{
+    int intValue;
+    float floatValue;
+    char stringValue[256];
+};
 
 
 // 此代码模块中包含的函数的前向声明:
@@ -84,6 +97,17 @@ void ListProcesses(HWND hListBox) {
 
 */
 
+/* ================================================ 工具函数 =====================================================*/
+
+// 在文本框中以添加形式输出文本(正常char类型字符数组，即x86字符串)
+void AppendTextToTextBox2(const char* text)
+{
+    int textLength = GetWindowTextLength(hwndTextBox2);
+    SendMessageA(hwndTextBox2, EM_SETSEL, textLength, textLength);
+    SendMessageA(hwndTextBox2, EM_REPLACESEL, FALSE, (LPARAM)text);
+}
+
+// 接受宽字符的重载
 void AppendTextToTextBox2(const wchar_t* text)
 {
     int textLength = GetWindowTextLength(hwndTextBox2);
@@ -221,7 +245,6 @@ WCHAR* GetProcessInfo(DWORD pid)
 }
 
 
-
 /*================================================ 获取进程内存信息 ====================================================*/
 
 PROCESS_MEMORY_COUNTERS_EX PrintProcessMemoryInfo(DWORD pid) {
@@ -251,7 +274,6 @@ PROCESS_MEMORY_COUNTERS_EX PrintProcessMemoryInfo(DWORD pid) {
 }
 
 
-
 /*============================================= 判断目标进程是否调用了目标模块 ==============================================*/
 
 bool IsProcessUsingDll(HANDLE hProcess, char* moduleName) {
@@ -274,7 +296,6 @@ bool IsProcessUsingDll(HANDLE hProcess, char* moduleName) {
     // 此处不能关闭进程句柄
     return result;
 }
-
 
 
 /*============================================= 获取目标函数所在的模块和地址 ==============================================*/
@@ -482,7 +503,7 @@ void injectWithRemoteThread(PROCESS_INFORMATION& pi, const char* dllPath)
 
 
 
-// 使用创建远程线程的方式实现DLL注入 
+// 使用创建远程线程的方式实现DLL注入(Work)
 bool RemoteThreadInject(DWORD targetProcessId, const char* dllPath)
 {
     // 打开目标进程
@@ -561,6 +582,80 @@ bool RemoteThreadInject(DWORD targetProcessId, const char* dllPath)
 
     return true;
 }
+
+
+
+/* ================================================ 管道方式实现进程通信(NOT work) ====================================*/
+
+// 读取管道内数据
+int processTransmitByPipe()
+{
+    HANDLE hPipe;
+    DWORD dwRead;
+    WCHAR buffer[BUFSIZE];
+
+    // 连接到命名管道
+    hPipe = CreateFile(TEXT("\\\\.\\pipe\\MyPipe"), GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
+
+    if (hPipe == INVALID_HANDLE_VALUE)
+    {
+        AppendTextToTextBox2(L"Failed to connect to named pipe.\r\n=============================\r\n");
+        return 1;
+    }
+
+    // 从命名管道读取数据
+    if (ReadFile(hPipe, buffer, BUFSIZE, &dwRead, NULL))
+    {
+        printf("Data read from pipe: %ls\n", buffer);
+        AppendTextToTextBox2(L"Data read from pipe:");
+        AppendTextToTextBox2(buffer);
+        AppendTextToTextBox2(L"\r\n=============================\r\n");
+    }
+    else
+    {
+        printf("Failed to rea data from pipe. Error code: %d\n", GetLastError());
+        AppendTextToTextBox2(L"Failed to read data from pipe.\r\n=============================\r\n");
+    }
+
+    // 关闭命名管道句柄
+    CloseHandle(hPipe);
+}
+
+
+/* ================================================== 剪切板实现进程间通信(Work) ======================================*/
+
+
+const WCHAR* GetTextFromClipboard()
+{
+    const WCHAR* text = nullptr;
+
+    // 打开剪贴板
+    if (OpenClipboard(nullptr))
+    {
+        // 检查剪贴板中是否存在文本数据
+        if (IsClipboardFormatAvailable(CF_UNICODETEXT))
+        {
+            // 获取剪贴板中的数据句柄
+            HANDLE hMem = GetClipboardData(CF_UNICODETEXT);
+            if (hMem)
+            {
+                // 锁定内存并读取数据
+                WCHAR* pMem = static_cast<WCHAR*>(GlobalLock(hMem));
+                if (pMem)
+                {
+                    text = pMem;
+                    GlobalUnlock(hMem);
+                }
+            }
+        }
+
+        // 关闭剪贴板
+        CloseClipboard();
+    }
+
+    return text;
+}
+
 
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
@@ -681,9 +776,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 // 创建 ListBox 控件
                 hListBox = CreateWindowEx(0, L"LISTBOX", L"", WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_AUTOVSCROLL | LBS_NOTIFY,
                     10, 30, 540, 560, hWnd, (HMENU)IDC_LISTBOX, hInst, NULL);
+                
                 // 获取并显示进程信息
                 ListProcesses(hListBox);
                 
+
                 // 创建第一个文本框
                 hwndTextBox1 = CreateWindowEx(
                     0,
@@ -701,6 +798,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     NULL
                 );
 
+
                 // 创建第二个文本框
                 hwndTextBox2 = CreateWindowEx(
                     0,
@@ -710,21 +808,62 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     565,
                     240,
                     400,
-                    330,
+                    340,
                     hWnd,
                     NULL,
                     NULL,
                     NULL
                 );
+
+
+                // 创建按键
+                btn = CreateWindowEx(
+                    0,
+                    L"BUTTON",
+                    L"API Hooking!",
+                    WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
+                    835,
+                    197, 
+                    130, 
+                    35,
+                    hWnd,
+                    (HMENU)ID_BUTTON, //样式设置与否都可以，实际上没有用到
+                    GetModuleHandle(NULL),
+                    NULL
+                );
+
             }
             break;
+
         /* ===================================== 接受注入到目标进程的DLL返回的Hooked API数据 ================================*/
         case WM_HOOKED_MESSAGE:
-            AppendTextToTextBox2(L"Hooked API被调用了！\r\n=============================\r\n");
-            if (wParam != NULL) {
-                LPCSTR lpText = static_cast<LPCSTR>(((COPYDATASTRUCT*)lParam)->lpData);
-                // 处理收到的数据(NOT work)，此处接收不到数据，待处理
-                MessageBoxA(hWnd, lpText, "Received data", MB_OK);
+            {
+                AppendTextToTextBox2("Hooked API被调用了！\r\n=============================\r\n");
+
+                AppendTextToTextBox2("获取到的文本为：");
+                AppendTextToTextBox2(GetTextFromClipboard());
+                AppendTextToTextBox2("\r\n=============================\r\n");
+
+                /*  ===================== 通过发送消息实现进程通信(NOT work, 操作系统不允许SendMessage传递指针) ================*/
+                /*
+                    HWND sourceHwnd = (HWND)wParam;
+                    COPYDATASTRUCT* pCds = (COPYDATASTRUCT*)lParam;
+
+                    if (pCds->cbData > 0 && pCds->lpData != nullptr)
+                    {
+                        const char* lpText = (const char*)pCds->lpData;
+
+                        // 对lpText进行操作，例如输出到控制台
+                        MessageBoxA(hWnd, lpText, "Received data", MB_OK);
+                        // std::cout << "Received message: " << lpText << std::endl;
+                    }
+
+                    if (wParam != NULL) {
+                        LPCSTR lpText = static_cast<LPCSTR>(((COPYDATASTRUCT*)lParam)->lpData);
+                        // 处理收到的数据(NOT work)，此处接收不到数据，待处理
+                        MessageBoxA(hWnd, lpText, "Received data", MB_OK);
+                    }
+                */
             }
             break;
 
@@ -752,17 +891,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     memset(&buffer, 0, sizeof(buffer));
                     SendMessage(hListBox, LB_GETTEXT, (WPARAM)selectedIndex, (LPARAM)buffer);
 
-                    /*      _snwprintf_s(
-                        buffer,
-                        sizeof(buffer) / sizeof(WCHAR),  // 缓冲区大小（以 WCHAR 为单位）
-                        L"选中的进程信息为:\nPID:%d\n进程执行路径为:%s\nWorking Set Size: %llu bytes\nPrivate Usage: %llu bytes\nPagefile Usage: %llu bytes\n",
-                        ProcessIDList[selectedIndex],
-                        processInfo,
-                        pmc.WorkingSetSize,
-                        pmc.PrivateUsage,
-                        pmc.PagefileUsage
-                    );
-*/
                     swprintf(
                         buffer,
                         L"选中的进程信息为:\r\nPID:%d\r\n进程执行路径为:%s\r\nWorking Set Size: %llu bytes\r\nPrivate Usage: %llu bytes\r\nPagefile Usage: %llu bytes\r\n",
@@ -775,52 +903,72 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
                     // 输出信息到文本框
                     SetWindowText(hwndTextBox1, buffer);
-
-
-                    /*======================================= Hook API开始 ===============================================*/
-
-                    hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
-                    // 这里配置权限可以使用 | (或)运算符来将几个权限叠加起来传递，有更好的可读性
-
-                    if (IsProcessUsingDll(hProcess, "user32.dll")) {
-                        // 获取到目标函数所在的模块和地址
-                        GetFunctionModuleAndAddress(hProcess, "user32.dll", "MessageBoxA", &hModule, &pFunction);
-                    }
-
-                    // 直接使用inline方式hook指定进程
-                    // hookWinAPI(hProcess, pFunction);
-
-                    AppendTextToTextBox2(L"开始将DLL注入指定进程\r\n=============================\r\n");
-
-                    // 注意：注入的DLL文件路径很重要，应该为被注入的可执行文件的相对路径
-                    if (RemoteThreadInject(pid, "HookDll.dll"))
-                    {
-                        AppendTextToTextBox2(L"DLL注入完成\r\n=============================\r\n");
-                    }
-                    else {
-                        AppendTextToTextBox2(L"[ERROR] DLL注入失败\r\n=============================\r\n");
-                    }
-                    // MessageBoxA(hWnd, "开始注入进程", "Hooker", MB_OK);
-
-                    // Find the address of LoadLibrary in target process(same to this process)
-                    // LoadLibraryW 函数位于 kernel32.dll 中，并且系统核心 DLL 会加载到固定地址，所以系统中所有进程的 LoadLibraryW 函数地址是相同的。
-                    // 用 GetProcAddress 函数获取本地进程 LoadLibraryW 地址即可。
-
-
-                    //ChildProcess process = ChildProcess::OpenFromHandle(hProcess);
-                    //injectWithRemoteThread(process.getProcessInformation(), "HookDll.dll");
-
-                    CloseHandle(hProcess);
-
-
-                    // 在窗口中显示选中项的文本
-                    // MessageBox(hWnd, buffer, L"选中项", MB_OK);
                 }
 
                 int wmId = LOWORD(wParam);
                 // 分析菜单选择:
                 switch (wmId)
                 {
+                    /*======================================= 处理按钮点击事件 ===========================================*/
+
+                    case ID_BUTTON:
+                        // 按钮被点击
+                        // MessageBox(hWnd, L"按钮被点击！", L"提示", MB_OK);
+                        if (HIWORD(wParam) == BN_CLICKED)
+                        {
+                            // 获取 ListBox 中当前选择项的索引
+                            int index = SendMessage(hListBox, LB_GETCURSEL, 0, 0);
+                            // 通过给ListBox句柄发送消息，以获取用户选择项的索引（即通过消息机制实现控件间的通信）
+
+                            if (index == LB_ERR)
+                            {
+                                // 如果没有选择任何项，显示一个提示框
+                                MessageBox(hWnd, L"请先选择要Hook的进程!", L"提示", MB_OK | MB_ICONINFORMATION);
+                                break;
+                            }
+
+                            /*======================================= Hook API开始 ======================================*/
+
+                            int pid = ProcessIDList[index];
+
+                            hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
+                            // 这里配置权限可以使用 | (或)运算符来将几个权限叠加起来传递，有更好的可读性
+
+                            if (IsProcessUsingDll(hProcess, "user32.dll")) {
+                                // 获取到目标函数所在的模块和地址
+                                GetFunctionModuleAndAddress(hProcess, "user32.dll", "MessageBoxA", &hModule, &pFunction);
+                            }
+
+                            // 直接使用inline方式hook指定进程(NOT work)
+                            // hookWinAPI(hProcess, pFunction);
+
+                            AppendTextToTextBox2("开始将DLL注入指定进程\r\n=============================\r\n");
+
+                            // 注意：注入的DLL文件路径很重要，应该为被注入的可执行文件的相对路径
+                            if (RemoteThreadInject(pid, "HookDll.dll"))
+                            {
+                                AppendTextToTextBox2(L"DLL注入完成\r\n=============================\r\n");
+                            }
+                            else {
+                                AppendTextToTextBox2(L"[ERROR] DLL注入失败\r\n=============================\r\n");
+                            }
+
+                            // Find the address of LoadLibrary in target process(same to this process)
+                            // LoadLibraryW 函数位于 kernel32.dll 中，并且系统核心 DLL 会加载到固定地址，所以系统中所有进程的 LoadLibraryW 函数地址是相同的。
+                            // 用 GetProcAddress 函数获取本地进程 LoadLibraryW 地址即可。
+
+
+                            //ChildProcess process = ChildProcess::OpenFromHandle(hProcess);
+                            //injectWithRemoteThread(process.getProcessInformation(), "HookDll.dll");
+
+                            CloseHandle(hProcess);
+
+
+                            // 在窗口中显示选中项的文本
+                            // MessageBox(hWnd, buffer, L"选中项", MB_OK);
+
+                        }
+                        break;
                     case IDM_ABOUT:
                         DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
                         break;
