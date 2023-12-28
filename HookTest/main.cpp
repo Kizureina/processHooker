@@ -316,6 +316,34 @@ void CopyTextToClipboard(const wchar_t* text)
 }
 
 
+void CopyTextToClipboard(const char* text)
+{
+    if (OpenClipboard(nullptr))
+    {
+        // 清空剪贴板
+        EmptyClipboard();
+
+        int length = strlen(text);
+        HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, (length + 1) * sizeof(char));
+
+        if (hMem != NULL) {
+            char* pMem = static_cast<char*>(GlobalLock(hMem));
+            if (pMem != NULL) {
+                strcpy_s(pMem, length + 1, text);
+
+                GlobalUnlock(hMem);
+
+                // 将数据放入剪贴板
+                SetClipboardData(CF_TEXT, hMem);
+            }
+        }
+        // 关闭剪贴板
+        CloseClipboard();
+    }
+}
+
+
+
 int main()
 {
     //ReadFromSharedMemory();
@@ -324,7 +352,8 @@ int main()
     HookAPI();
     MessageBoxA(NULL, "Hi", "test11", MB_OK);
     */
-    SendCustomMessage();
+    // SendCustomMessage();
+    // CopyTextToClipboard("你好");
     /*
     if (RemoteThreadInject(30192, "HookDll.dll")) {
         printf("注入成功！\n");

@@ -5,7 +5,10 @@
 #include <fstream>
 
 void UnHook();
-void HookAPI();
+void HookAPI(const char* moduleName, const char* functionName, void* pfunc);
+int __stdcall HookedMessageBoxW(HWND hwnd, LPCWSTR lpText, LPCWSTR lpCaption, UINT uType);
+
+
 
 const UINT WM_HOOKED_MESSAGE = WM_APP + 1; // 自定义消息
 
@@ -79,13 +82,44 @@ void CopyTextToClipboard(const wchar_t* text)
         {
             // 锁定内存并写入数据
             wchar_t* pMem = static_cast<wchar_t*>(GlobalLock(hMem));
-            wcscpy_s(pMem, wcslen(text) + 1, text);
+            if (pMem != NULL)
+            {
+                wcscpy_s(pMem, wcslen(text) + 1, text);
+            }
             GlobalUnlock(hMem);
 
             // 将数据放入剪贴板
             SetClipboardData(CF_UNICODETEXT, hMem);
         }
 
+        // 关闭剪贴板
+        CloseClipboard();
+    }
+}
+
+
+// 用于不是宽字符的重载
+void CopyTextToClipboard(const char* text)
+{
+    if (OpenClipboard(nullptr))
+    {
+        // 清空剪贴板
+        EmptyClipboard();
+
+        int length = strlen(text);
+        HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, (length + 1) * sizeof(char));
+
+        if (hMem != NULL) {
+            char* pMem = static_cast<char*>(GlobalLock(hMem));
+            if (pMem != NULL) {
+                strcpy_s(pMem, length + 1, text);
+
+                GlobalUnlock(hMem);
+
+                // 将数据放入剪贴板
+                SetClipboardData(CF_TEXT, hMem);
+            }
+        }
         // 关闭剪贴板
         CloseClipboard();
     }
@@ -119,7 +153,7 @@ void SendCustomMessage(LPCWSTR lpText)
     if (targetHwnd != NULL) {
 
         // WCHAR buffer[] = L"Hello world";
-        // 将Hook到的数据写入剪切板（x86字符）
+        // 将Hook到的数据写入剪切板（x64字符）
         CopyTextToClipboard(lpText);
 
         COPYDATASTRUCT cds = { 0 };
@@ -133,13 +167,71 @@ void SendCustomMessage(LPCWSTR lpText)
     }
 }
 
+// 用于不是宽字符的重载
+void SendCustomMessage(LPCSTR lpText)
+{
+    HWND targetHwnd = FindWindow(NULL, L"ProcessHooker"); // 根据窗口标题查找目标窗口句柄
+    if (targetHwnd != NULL) {
+
+        // WCHAR buffer[] = L"Hello world";
+        // 将Hook到的数据写入剪切板（x86字符）
+        CopyTextToClipboard(lpText);
+
+        SendMessage(targetHwnd, WM_HOOKED_MESSAGE, 0, 0); // 发送消息
+    }
+}
+
 
 FARPROC pFunction = NULL;
 SIZE_T bytesWritten = 0;
 char messageBoxOriginalBytes[6] = {};
 
 
-int __stdcall HookedMessageBox(HWND hwnd, LPCWSTR lpText, LPCWSTR lpCaption, UINT uType) {
+BOOL __stdcall HookedTextOutA(
+    HDC    hdc,
+    int    x,
+    int    y,
+    LPCSTR lpString,
+    // 指向以 null 结尾的 ANSI 字符串的指针，表示要显示的文字内容。
+    int    c
+    // 表示要显示的文字内容的长度
+) {
+    UnHook();
+
+    SendCustomMessage(lpString);
+
+    bool result = TextOutA(hdc, x, y, lpString, c);
+
+    HookAPI("gdi32.dll", "TextOutA", &HookedTextOutA);
+
+    return result;
+}
+
+void HookAPI() {
+    pFunction = getLibraryProcAddress("user32.dll", "MessageBoxW");
+    SIZE_T bytesRead = 0;
+
+    // save the first 6 bytes of the original MessageBoxA function - will need for unhooking
+    ReadProcessMemory(GetCurrentProcess(), pFunction, messageBoxOriginalBytes, 6, &bytesRead);
+
+    // create a patch "push <address of new MessageBoxA); ret"
+    // 作用即为jmp &hookedAPI，但直接用jmp需要计算偏移量，所以用堆栈实现
+    void* hookedMessageBoxAddress = &HookedMessageBoxW;
+
+    char patch[6] = { 0 };
+
+    memcpy_s(patch, 1, "\x68", 1); //push
+    memcpy_s(patch + 1, 4, &hookedMessageBoxAddress, 4); //32位地址为4字节长度
+    memcpy_s(patch + 5, 1, "\xC3", 1); //ret
+
+    // patch the MessageBoxA
+    if (!WriteProcessMemory(GetCurrentProcess(), (LPVOID)pFunction, patch, sizeof(patch), &bytesWritten)) {
+        DWORD dwError = GetLastError();
+        // 当dwError为5时，说明写入进程数据的请求被拒绝，即为权限或者安全问题
+    }
+}
+
+int __stdcall HookedMessageBoxW(HWND hwnd, LPCWSTR lpText, LPCWSTR lpCaption, UINT uType) {
 
     // std::cout << "Ohai from the hooked function\n";
     // std::cout << "Text: " << (LPCSTR)lpText << "\nCaption: " << (LPCSTR)lpCaption << std::endl;
@@ -168,32 +260,22 @@ int __stdcall HookedMessageBox(HWND hwnd, LPCWSTR lpText, LPCWSTR lpCaption, UIN
     }
     */
 
+    // call the original MessageBoxA
     int result = MessageBoxW(NULL, lpText, lpCaption, uType);
 
+    // HookAPI("user32.dll", "MessageBoxW", &HookedMessageBoxW);
     HookAPI();
-    // call the original MessageBoxA
+
     return result;
 }
 
 
-/*
-int __stdcall HookedMessageBox(HWND hwnd, LPCSTR lpText, LPCSTR lpCaption, UINT uType) {
-
-    // print intercepted values from the MessageBoxA function
-    std::cout << "Ohai from the hooked function\n";
-    std::cout << "Text: " << (LPCSTR)lpText << "\nCaption: " << (LPCSTR)lpCaption << std::endl;
-    // SetWindowText(hwndTextBox2, lpText);
-
-    MessageBoxA(NULL, lpText, "GET IT", MB_OK);
-
-    // call the original MessageBoxA
-    return MessageBoxA(NULL, lpText, lpCaption, uType);
-}
-*/
 
 
-void HookAPI() {
-    pFunction = getLibraryProcAddress("user32.dll", "MessageBoxW");
+void HookAPI(const char* moduleName, const char* functionName, void* pHookedFunction) {
+
+    pFunction = getLibraryProcAddress(moduleName, functionName);
+
     SIZE_T bytesRead = 0;
 
     // save the first 6 bytes of the original MessageBoxA function - will need for unhooking
@@ -201,7 +283,7 @@ void HookAPI() {
 
     // create a patch "push <address of new MessageBoxA); ret"
     // 作用即为jmp &hookedAPI，但直接用jmp需要计算偏移量，所以用堆栈实现
-    void* hookedMessageBoxAddress = &HookedMessageBox;
+    void* hookedMessageBoxAddress = pHookedFunction;
 
     char patch[6] = { 0 };
 
@@ -232,7 +314,11 @@ BOOL APIENTRY DllMain( HMODULE hModule,
     {
         case DLL_PROCESS_ATTACH:
             MessageBoxW(NULL, L"DLL inject success!", L"Congratulations", MB_OK);
+            
+            //HookAPI("gdi32.dll", "TextOutA", &HookedTextOutA);
+            //HookAPI("user32.dll", "MessageBoxW", &HookedMessageBoxW);
             HookAPI();
+
             break;
         case DLL_THREAD_ATTACH:
         case DLL_THREAD_DETACH:
