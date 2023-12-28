@@ -1,2 +1,4 @@
-﻿  dllmain.cpp
+﻿  pch.cpp
+  dllmain.cpp
+    正在创建库 C:\Users\Yoruko\source\repos\WindowsProject3\Debug\DllTest.lib 和对象 C:\Users\Yoruko\source\repos\WindowsProject3\Debug\DllTest.exp
   DllTest.vcxproj -> C:\Users\Yoruko\source\repos\WindowsProject3\Debug\DllTest.dll

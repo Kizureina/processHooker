@@ -5,6 +5,7 @@
 #include <fstream>
 
 void UnHook();
+void HookAPI();
 
 const UINT WM_HOOKED_MESSAGE = WM_APP + 1; // 自定义消息
 
@@ -167,8 +168,11 @@ int __stdcall HookedMessageBox(HWND hwnd, LPCWSTR lpText, LPCWSTR lpCaption, UIN
     }
     */
 
+    int result = MessageBoxW(NULL, lpText, lpCaption, uType);
+
+    HookAPI();
     // call the original MessageBoxA
-    return MessageBoxW(NULL, lpText, lpCaption, uType);
+    return result;
 }
 
 
@@ -198,7 +202,9 @@ void HookAPI() {
     // create a patch "push <address of new MessageBoxA); ret"
     // 作用即为jmp &hookedAPI，但直接用jmp需要计算偏移量，所以用堆栈实现
     void* hookedMessageBoxAddress = &HookedMessageBox;
+
     char patch[6] = { 0 };
+
     memcpy_s(patch, 1, "\x68", 1); //push
     memcpy_s(patch + 1, 4, &hookedMessageBoxAddress, 4); //32位地址为4字节长度
     memcpy_s(patch + 5, 1, "\xC3", 1); //ret
@@ -231,6 +237,7 @@ BOOL APIENTRY DllMain( HMODULE hModule,
         case DLL_THREAD_ATTACH:
         case DLL_THREAD_DETACH:
         case DLL_PROCESS_DETACH:
+            UnHook();
             break;
     }
     return TRUE;

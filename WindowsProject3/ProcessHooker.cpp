@@ -48,54 +48,7 @@ BOOL                InitInstance(HINSTANCE, int);
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 
-/*
-void ListProcesses(HWND hListBox) {
-    // 创建一个进程快照
-    HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
 
-    if (hSnapshot == INVALID_HANDLE_VALUE) {
-        perror("CreateToolhelp32Snapshot");
-        return;
-    }
-
-    // 设置结构体的大小
-    PROCESSENTRY32 pe32;
-    pe32.dwSize = sizeof(PROCESSENTRY32);
-
-    // 获取第一个进程的信息
-    if (Process32First(hSnapshot, &pe32)) {
-        // 遍历所有进程，将进程 ID 存储在数组中
-        do {
-            ProcessIDList[i] = pe32.th32ProcessID;
-            i++;
-        } while (Process32Next(hSnapshot, &pe32));
-
-        // 从数组末尾开始向列表框控件中添加进程信息
-        for (int j = i - 1; j >= 0; j--) {
-            // 获取进程句柄
-            HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, ProcessIDList[j]);
-            if (hProcess) {
-                // 获取进程文件名
-                WCHAR processName[MAX_PATH];
-                if (GetModuleBaseNameW(hProcess, NULL, processName, MAX_PATH)) {
-                    // 将进程信息添加到 ListBox 控件
-                    WCHAR buffer[256];
-                    swprintf(buffer, L"Process ID: %lu, Process Name: %s", ProcessIDList[j], processName);
-                    SendMessage(hListBox, LB_ADDSTRING, 0, (LPARAM)buffer);
-                }
-                CloseHandle(hProcess);
-            }
-        }
-    }
-    else {
-        perror("Process32First");
-    }
-
-    // 关闭进程快照句柄
-    CloseHandle(hSnapshot);
-}
-
-*/
 
 /* ================================================ 工具函数 =====================================================*/
 
@@ -194,6 +147,55 @@ void ListProcesses(HWND hListBox) {
     // 关闭进程快照句柄
     CloseHandle(hSnapshot);
 }
+*/
+
+/*
+void ListProcesses(HWND hListBox) {
+    // 创建一个进程快照
+    HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+
+    if (hSnapshot == INVALID_HANDLE_VALUE) {
+        perror("CreateToolhelp32Snapshot");
+        return;
+    }
+
+    // 设置结构体的大小
+    PROCESSENTRY32 pe32;
+    pe32.dwSize = sizeof(PROCESSENTRY32);
+
+    // 获取第一个进程的信息
+    if (Process32First(hSnapshot, &pe32)) {
+        // 遍历所有进程，将进程 ID 存储在数组中
+        do {
+            ProcessIDList[i] = pe32.th32ProcessID;
+            i++;
+        } while (Process32Next(hSnapshot, &pe32));
+
+        // 从数组末尾开始向列表框控件中添加进程信息
+        for (int j = i - 1; j >= 0; j--) {
+            // 获取进程句柄
+            HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, ProcessIDList[j]);
+            if (hProcess) {
+                // 获取进程文件名
+                WCHAR processName[MAX_PATH];
+                if (GetModuleBaseNameW(hProcess, NULL, processName, MAX_PATH)) {
+                    // 将进程信息添加到 ListBox 控件
+                    WCHAR buffer[256];
+                    swprintf(buffer, L"Process ID: %lu, Process Name: %s", ProcessIDList[j], processName);
+                    SendMessage(hListBox, LB_ADDSTRING, 0, (LPARAM)buffer);
+                }
+                CloseHandle(hProcess);
+            }
+        }
+    }
+    else {
+        perror("Process32First");
+    }
+
+    // 关闭进程快照句柄
+    CloseHandle(hSnapshot);
+}
+
 */
 
 /*================================================ 获取进程运行信息 ====================================================*/
@@ -308,9 +310,11 @@ bool GetFunctionModuleAndAddress(HANDLE hProcess, const char* moduleName, const 
     // 枚举进程中所有模块的句柄
     if (!EnumProcessModules(hProcess, hModules, sizeof(hModules), &cbNeeded)) {
         DWORD dwError = GetLastError();
+
         // 输出错误码，可通过返回的int确定API函数报错原因
         // 当错误码为6时，说明句柄无效，即为hProcess的问题
         // 当错误码为299时，尝试读取进程模块信息时发生了部分复制错误，多半是架构不同
+
         SetWindowText(hwndTextBox2, L"[ERROR] EnumProcessModules failed with error code\r\n=============================\r\n");
         // printf("EnumProcessModules failed with error code %d\n", dwError);
         return false;
@@ -342,7 +346,7 @@ bool GetFunctionModuleAndAddress(HANDLE hProcess, const char* moduleName, const 
 }
 
 
-/*================================ 通过修改机器码直接inline Hook，使用jmp指令（NOT Work） =====================================*/
+/*======================== 通过修改机器码直接inline Hook，使用jmp指令，但需要计算偏移量，比较麻烦（NOT Work） =======================*/
 
 // 备份原始函数的机器码
 BYTE* BackupOriginalFunction(HANDLE hProcess, FARPROC pFunction, DWORD dwSize)
@@ -426,6 +430,7 @@ void hookWinAPI(HANDLE hProcess, FARPROC pFunction) {
     // patch the MessageBoxA
     if (!WriteProcessMemory(hProcess, (LPVOID)pFunction, patch, sizeof(patch), &bytesWritten)) {
         DWORD dwError = GetLastError();
+        
         // 当dwError为5时，说明写入进程数据的请求被拒绝，即为权限或者安全问题
         // user32.dll通常是由操作系统加载并且具有保护，因此直接修改其中的函数是不被允许的。即使您以管理员权限运行程序，也不能随意修改操作系统内置的DLL文件。
         // 好像通过inline hook实现hook目标进程的API函数。是不行的了
@@ -582,7 +587,6 @@ bool RemoteThreadInject(DWORD targetProcessId, const char* dllPath)
 
     return true;
 }
-
 
 
 /* ================================================ 管道方式实现进程通信(NOT work) ====================================*/
