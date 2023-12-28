@@ -353,7 +353,7 @@ int main()
     MessageBoxA(NULL, "Hi", "test11", MB_OK);
     */
     // SendCustomMessage();
-    // CopyTextToClipboard("你好");
+    CopyTextToClipboard("你好");
     /*
     if (RemoteThreadInject(30192, "HookDll.dll")) {
         printf("注入成功！\n");

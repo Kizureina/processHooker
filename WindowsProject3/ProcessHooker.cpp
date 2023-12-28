@@ -32,6 +32,7 @@ HANDLE hProcess = NULL; // 获取选中进程的句柄
 FARPROC pFunction = NULL; // 目标函数的地址
 HMODULE hModule = NULL;
 
+char dllPath[] = "C://Users//Yoruko//source//repos//WindowsProject3//Debug//HookDll.dll";
 
 // 定义接受消息的数据结构
 struct MyData
@@ -661,6 +662,38 @@ const WCHAR* GetTextFromClipboard()
 }
 
 
+// 用于不是宽字符
+const char* GetCharTextFromClipboard()
+{
+    const char* text = nullptr;
+
+    // 打开剪贴板
+    if (OpenClipboard(nullptr))
+    {
+        // 检查剪贴板中是否存在文本数据
+        if (IsClipboardFormatAvailable(CF_TEXT))
+        {
+            // 获取剪贴板中的数据句柄
+            HANDLE hMem = GetClipboardData(CF_TEXT);
+            if (hMem)
+            {
+                // 锁定内存并读取数据
+                char* pMem = static_cast<char*>(GlobalLock(hMem));
+                if (pMem)
+                {
+                    text = pMem;
+                    GlobalUnlock(hMem);
+                }
+            }
+        }
+
+        // 关闭剪贴板
+        CloseClipboard();
+    }
+
+    return text;
+}
+
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                      _In_opt_ HINSTANCE hPrevInstance,
@@ -845,7 +878,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 AppendTextToTextBox2("Hooked API被调用了！\r\n=============================\r\n");
 
                 AppendTextToTextBox2("获取到的文本为：");
-                AppendTextToTextBox2(GetTextFromClipboard());
+                AppendTextToTextBox2(GetCharTextFromClipboard());
                 AppendTextToTextBox2("\r\n=============================\r\n");
 
                 /*  ===================== 通过发送消息实现进程通信(NOT work, 操作系统不允许SendMessage传递指针) ================*/
@@ -949,7 +982,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                             AppendTextToTextBox2("开始将DLL注入指定进程\r\n=============================\r\n");
 
                             // 注意：注入的DLL文件路径很重要，应该为被注入的可执行文件的相对路径
-                            if (RemoteThreadInject(pid, "HookDll.dll"))
+                            if (RemoteThreadInject(pid, dllPath))
                             {
                                 AppendTextToTextBox2(L"DLL注入完成\r\n=============================\r\n");
                             }
@@ -997,7 +1030,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             }
             break;
         case WM_CLOSE:
-            if (MessageBox(hWnd, L"Really quit?", L"Process Listener", MB_OKCANCEL) == IDOK)
+            if (MessageBoxA(hWnd, "Really quit?", "Process Listener", MB_OKCANCEL) == IDOK)
             {
                 DestroyWindow(hWnd);
             }

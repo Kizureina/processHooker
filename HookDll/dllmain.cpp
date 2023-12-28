@@ -7,8 +7,7 @@
 void UnHook();
 void HookAPI(const char* moduleName, const char* functionName, void* pfunc);
 int __stdcall HookedMessageBoxW(HWND hwnd, LPCWSTR lpText, LPCWSTR lpCaption, UINT uType);
-
-
+int __stdcall HookedMessageBoxA(HWND hwnd, LPCSTR lpText, LPCSTR lpCaption, UINT uType);
 
 const UINT WM_HOOKED_MESSAGE = WM_APP + 1; // 自定义消息
 
@@ -82,10 +81,7 @@ void CopyTextToClipboard(const wchar_t* text)
         {
             // 锁定内存并写入数据
             wchar_t* pMem = static_cast<wchar_t*>(GlobalLock(hMem));
-            if (pMem != NULL)
-            {
-                wcscpy_s(pMem, wcslen(text) + 1, text);
-            }
+            wcscpy_s(pMem, wcslen(text) + 1, text);
             GlobalUnlock(hMem);
 
             // 将数据放入剪贴板
@@ -153,7 +149,7 @@ void SendCustomMessage(LPCWSTR lpText)
     if (targetHwnd != NULL) {
 
         // WCHAR buffer[] = L"Hello world";
-        // 将Hook到的数据写入剪切板（x64字符）
+        // 将Hook到的数据写入剪切板（x86字符）
         CopyTextToClipboard(lpText);
 
         COPYDATASTRUCT cds = { 0 };
@@ -166,6 +162,7 @@ void SendCustomMessage(LPCWSTR lpText)
         // MessageBoxA(NULL, "发送消息完成", "Hooker", MB_OK);
     }
 }
+
 
 // 用于不是宽字符的重载
 void SendCustomMessage(LPCSTR lpText)
@@ -185,6 +182,38 @@ void SendCustomMessage(LPCSTR lpText)
 FARPROC pFunction = NULL;
 SIZE_T bytesWritten = 0;
 char messageBoxOriginalBytes[6] = {};
+
+
+int __stdcall HookedMessageBoxW(HWND hwnd, LPCWSTR lpText, LPCWSTR lpCaption, UINT uType) {
+    UnHook();
+    // MessageBoxA(NULL, lpText, "GET IT", MB_OK);
+
+    /*==================================== 通过向指定窗口进程发送消息实现进程通信(Work) =================================*/
+    SendCustomMessage(lpText);
+
+    // call the original MessageBoxA
+    int result = MessageBoxW(NULL, lpText, lpCaption, uType);
+
+    HookAPI("user32.dll", "MessageBoxW", &HookedMessageBoxW);
+
+    return result;
+}
+
+
+int __stdcall HookedMessageBoxA(HWND hwnd, LPCSTR lpText, LPCSTR lpCaption, UINT uType) {
+    UnHook();
+    // MessageBoxW(NULL, L"test", L"GET IT", MB_OK);
+
+    /*==================================== 通过向指定窗口进程发送消息实现进程通信(Work) =================================*/
+    SendCustomMessage(lpText);
+
+    // call the original MessageBoxA
+    int result = MessageBoxA(NULL, lpText, lpCaption, uType);
+
+    HookAPI("user32.dll", "MessageBoxA", &HookedMessageBoxA);
+
+    return result;
+}
 
 
 BOOL __stdcall HookedTextOutA(
@@ -207,75 +236,11 @@ BOOL __stdcall HookedTextOutA(
     return result;
 }
 
-void HookAPI() {
-    pFunction = getLibraryProcAddress("user32.dll", "MessageBoxW");
-    SIZE_T bytesRead = 0;
-
-    // save the first 6 bytes of the original MessageBoxA function - will need for unhooking
-    ReadProcessMemory(GetCurrentProcess(), pFunction, messageBoxOriginalBytes, 6, &bytesRead);
-
-    // create a patch "push <address of new MessageBoxA); ret"
-    // 作用即为jmp &hookedAPI，但直接用jmp需要计算偏移量，所以用堆栈实现
-    void* hookedMessageBoxAddress = &HookedMessageBoxW;
-
-    char patch[6] = { 0 };
-
-    memcpy_s(patch, 1, "\x68", 1); //push
-    memcpy_s(patch + 1, 4, &hookedMessageBoxAddress, 4); //32位地址为4字节长度
-    memcpy_s(patch + 5, 1, "\xC3", 1); //ret
-
-    // patch the MessageBoxA
-    if (!WriteProcessMemory(GetCurrentProcess(), (LPVOID)pFunction, patch, sizeof(patch), &bytesWritten)) {
-        DWORD dwError = GetLastError();
-        // 当dwError为5时，说明写入进程数据的请求被拒绝，即为权限或者安全问题
-    }
-}
-
-int __stdcall HookedMessageBoxW(HWND hwnd, LPCWSTR lpText, LPCWSTR lpCaption, UINT uType) {
-
-    // std::cout << "Ohai from the hooked function\n";
-    // std::cout << "Text: " << (LPCSTR)lpText << "\nCaption: " << (LPCSTR)lpCaption << std::endl;
-    
-    // SetWindowText(hwndTextBox2, lpText);
-    UnHook();
-    // MessageBoxA(NULL, lpText, "GET IT", MB_OK);
-
-    /*==================================== 通过向指定窗口进程发送消息实现进程通信(Work) =================================*/
-    SendCustomMessage(lpText);
-
-    /*
-    HWND targetHwnd = FindWindow(NULL, L"ProcessHooker"); // 根据窗口标题查找目标窗口句柄
-    if (targetHwnd != NULL) {
-
-        CopyTextToClipboard((LPCWSTR)lpText);
-
-        COPYDATASTRUCT cds = { 0 };
-        cds.dwData = 0; // 自定义数据
-        cds.cbData = strlen(lpText) + 1; // 字符串长度
-        cds.lpData = (LPVOID)lpText; // 字符串数据
-
-        SendMessage(targetHwnd, WM_HOOKED_MESSAGE, 0, (LPARAM)&cds); // 发送消息
-        // 发送数据(NOT work)，此处接收不到数据，待处理
-        // MessageBoxA(NULL, "发送消息完成", "Hooker", MB_OK);
-    }
-    */
-
-    // call the original MessageBoxA
-    int result = MessageBoxW(NULL, lpText, lpCaption, uType);
-
-    // HookAPI("user32.dll", "MessageBoxW", &HookedMessageBoxW);
-    HookAPI();
-
-    return result;
-}
-
 
 
 
 void HookAPI(const char* moduleName, const char* functionName, void* pHookedFunction) {
-
     pFunction = getLibraryProcAddress(moduleName, functionName);
-
     SIZE_T bytesRead = 0;
 
     // save the first 6 bytes of the original MessageBoxA function - will need for unhooking
@@ -284,9 +249,7 @@ void HookAPI(const char* moduleName, const char* functionName, void* pHookedFunc
     // create a patch "push <address of new MessageBoxA); ret"
     // 作用即为jmp &hookedAPI，但直接用jmp需要计算偏移量，所以用堆栈实现
     void* hookedMessageBoxAddress = pHookedFunction;
-
     char patch[6] = { 0 };
-
     memcpy_s(patch, 1, "\x68", 1); //push
     memcpy_s(patch + 1, 4, &hookedMessageBoxAddress, 4); //32位地址为4字节长度
     memcpy_s(patch + 5, 1, "\xC3", 1); //ret
@@ -305,27 +268,23 @@ void UnHook() {
 }
 
 
-BOOL APIENTRY DllMain( HMODULE hModule,
-                       DWORD  ul_reason_for_call,
-                       LPVOID lpReserved
-                     )
+BOOL APIENTRY DllMain(HMODULE hModule,
+    DWORD  ul_reason_for_call,
+    LPVOID lpReserved
+)
 {
     switch (ul_reason_for_call)
     {
-        case DLL_PROCESS_ATTACH:
-            MessageBoxW(NULL, L"DLL inject success!", L"Congratulations", MB_OK);
-            
-            //HookAPI("gdi32.dll", "TextOutA", &HookedTextOutA);
-            //HookAPI("user32.dll", "MessageBoxW", &HookedMessageBoxW);
-            HookAPI();
-
-            break;
-        case DLL_THREAD_ATTACH:
-        case DLL_THREAD_DETACH:
-        case DLL_PROCESS_DETACH:
-            UnHook();
-            break;
+    case DLL_PROCESS_ATTACH:
+        MessageBoxW(NULL, L"DLL inject success!", L"Congratulations", MB_OK);
+        HookAPI("user32.dll", "MessageBoxA", &HookedMessageBoxA);
+        break;
+    case DLL_THREAD_ATTACH:
+    case DLL_THREAD_DETACH:
+    case DLL_PROCESS_DETACH:
+        /* 罪魁祸首居然是你！UnHook! 不能在此处使用*/
+        // UnHook();
+        break;
     }
     return TRUE;
 }
-
