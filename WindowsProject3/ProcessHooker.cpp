@@ -804,6 +804,10 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 //  WM_DESTROY  - 发送退出消息并返回
 //
 //
+
+int count = 0;
+const char* lastChar;
+
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     switch (message)
@@ -875,12 +879,26 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         /* ===================================== 接受注入到目标进程的DLL返回的Hooked API数据 ================================*/
         case WM_HOOKED_MESSAGE:
             {
+                if (count == 0) {
+                    AppendTextToTextBox2(GetCharTextFromClipboard());
+                }
+
+                if (count != 0) {
+                    if (strcmp(lastChar, GetCharTextFromClipboard()) != 0)
+                    {
+                        AppendTextToTextBox2(GetCharTextFromClipboard());
+                    }
+                }
 
                 // AppendTextToTextBox2("Hooked API被调用了！\r\n=============================\r\n");
 
                 // AppendTextToTextBox2("获取到的文本为：");
-                AppendTextToTextBox2(GetCharTextFromClipboard());
-                // AppendTextToTextBox2("\r\n=============================\r\n");
+                // if (strcmp(GetCharTextFromClipboard(),"。")) {
+                   // AppendTextToTextBox2("\r\n=============================\r\n");
+                
+                count++;
+                lastChar = GetCharTextFromClipboard();
+
 
                 /*  ===================== 通过发送消息实现进程通信(NOT work, 操作系统不允许SendMessage传递指针) ================*/
                 /*
