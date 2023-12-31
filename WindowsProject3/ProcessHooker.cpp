@@ -875,11 +875,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         /* ===================================== 接受注入到目标进程的DLL返回的Hooked API数据 ================================*/
         case WM_HOOKED_MESSAGE:
             {
-                AppendTextToTextBox2("Hooked API被调用了！\r\n=============================\r\n");
 
-                AppendTextToTextBox2("获取到的文本为：");
+                // AppendTextToTextBox2("Hooked API被调用了！\r\n=============================\r\n");
+
+                // AppendTextToTextBox2("获取到的文本为：");
                 AppendTextToTextBox2(GetCharTextFromClipboard());
-                AppendTextToTextBox2("\r\n=============================\r\n");
+                // AppendTextToTextBox2("\r\n=============================\r\n");
 
                 /*  ===================== 通过发送消息实现进程通信(NOT work, 操作系统不允许SendMessage传递指针) ================*/
                 /*

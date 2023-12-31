@@ -11,6 +11,8 @@ int __stdcall HookedMessageBoxA(HWND hwnd, LPCSTR lpText, LPCSTR lpCaption, UINT
 
 const UINT WM_HOOKED_MESSAGE = WM_APP + 1; // 自定义消息
 
+char* stringResult = new char[256];
+
 /*============================================ 通过写入共享内存数据实现进程通信(NOT Work) =========================================*/
 
 // 共享内存区域的名称
@@ -216,6 +218,8 @@ int __stdcall HookedMessageBoxA(HWND hwnd, LPCSTR lpText, LPCSTR lpCaption, UINT
 }
 
 
+BOOL isFirstCall = true;
+
 BOOL __stdcall HookedTextOutA(
     HDC    hdc,
     int    x,
@@ -225,7 +229,10 @@ BOOL __stdcall HookedTextOutA(
     int    c
     // 表示要显示的文字内容的长度
 ) {
+
     UnHook();
+
+    // strcat(stringResult, lpString);
 
     SendCustomMessage(lpString);
 
@@ -277,7 +284,9 @@ BOOL APIENTRY DllMain(HMODULE hModule,
     {
     case DLL_PROCESS_ATTACH:
         MessageBoxW(NULL, L"DLL inject success!", L"Congratulations", MB_OK);
-        HookAPI("user32.dll", "MessageBoxA", &HookedMessageBoxA);
+
+        HookAPI("gdi32.dll", "TextOutA", &HookedTextOutA);
+
         break;
     case DLL_THREAD_ATTACH:
     case DLL_THREAD_DETACH:
