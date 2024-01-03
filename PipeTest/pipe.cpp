@@ -26,8 +26,7 @@ void CALLBACK CompletionRoutine(DWORD dwErrorCode, DWORD dwNumberOfBytesTransfer
 
 #define BUFSIZE 512
 
-
-int main()
+int main1()
 {
     DWORD dwWritten;
     WCHAR buffer[512];
@@ -97,4 +96,74 @@ void CALLBACK CompletionRoutine(DWORD dwErrorCode, DWORD dwNumberOfBytesTransfer
     {
         std::cerr << "Asynchronous connection failed with error code: " << dwErrorCode << std::endl;
     }
+}
+
+#include <windows.h>
+#include <iostream>
+
+// 用于保存目标窗口句柄的全局变量
+HWND targetWindowHandle = NULL;
+
+// 回调函数用于枚举窗口
+BOOL CALLBACK EnumWindowsProc(HWND hWnd, LPARAM lParam)
+{
+    // 获取窗口所属进程的PID
+    DWORD processId;
+    GetWindowThreadProcessId(hWnd, &processId);
+
+    // 比较PID是否匹配
+    if (processId == (DWORD)lParam)
+    {
+        // 找到目标窗口，保存句柄并停止枚举
+        targetWindowHandle = hWnd;
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+// 根据进程PID获取目标窗口句柄
+HWND GetTargetWindowHandleByPID(DWORD targetPID)
+{
+    targetWindowHandle = NULL;
+    EnumWindows(EnumWindowsProc, (LPARAM)targetPID);
+    return targetWindowHandle;
+}
+
+// 发送回车键消息
+void SendEnterKeyMessage(HWND hWnd)
+{
+    SendMessage(hWnd, WM_KEYDOWN, VK_RETURN, 0);  // 模拟按下回车键
+    SendMessage(hWnd, WM_KEYUP, VK_RETURN, 0);    // 模拟释放回车键
+}
+
+// 发送鼠标左键点击消息
+void SendMouseLeftClick(HWND hWnd, int x, int y)
+{
+    LPARAM lParam = MAKELPARAM(x, y);  // 构造鼠标坐标参数
+
+    // 模拟鼠标按下和释放的消息
+    PostMessage(hWnd, WM_LBUTTONDOWN, MK_LBUTTON, lParam);
+    PostMessage(hWnd, WM_LBUTTONUP, 0, lParam);
+}
+
+int main()
+{
+    DWORD targetPID = 24028; // 目标进程的PID，替换为实际的PID
+
+    // 获取目标窗口句柄
+    HWND targetWindowHandle = GetTargetWindowHandleByPID(targetPID);
+
+    if (targetWindowHandle != NULL)
+    {
+        SendEnterKeyMessage(targetWindowHandle);
+        SendMouseLeftClick(targetWindowHandle, 50, 50);
+        std::cout << "发送成功!" << std::endl;
+    }
+    else
+    {
+        std::cout << "未找到目标窗口" << std::endl;
+    }
+
+    return 0;
 }

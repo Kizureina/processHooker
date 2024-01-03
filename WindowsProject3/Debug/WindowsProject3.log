@@ -1,2 +1,13 @@
 ﻿C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(514,5): warning MSB8028: 中间目录(Debug\)包含从另一个项目(WindowsProject3.vcxproj)共享的文件。   这会导致错误的清除和重新生成行为。
+  ProcessHooker.cpp
+C:\Users\Yoruko\source\repos\WindowsProject3\WindowsProject3\ProcessHooker.cpp(293,27): warning C4018: “<”: 有符号/无符号不匹配
+C:\Users\Yoruko\source\repos\WindowsProject3\WindowsProject3\ProcessHooker.cpp(1063,25): warning C4477: “swprintf”: 格式字符串“%llu”需要类型“unsigned __int64”的参数，但可变参数 3 拥有了类型“SIZE_T”
+C:\Users\Yoruko\source\repos\WindowsProject3\WindowsProject3\ProcessHooker.cpp(1063,25): message : 请考虑在格式字符串中使用“%lu”
+C:\Users\Yoruko\source\repos\WindowsProject3\WindowsProject3\ProcessHooker.cpp(1063,25): warning C4477: “swprintf”: 格式字符串“%llu”需要类型“unsigned __int64”的参数，但可变参数 4 拥有了类型“SIZE_T”
+C:\Users\Yoruko\source\repos\WindowsProject3\WindowsProject3\ProcessHooker.cpp(1063,25): message : 请考虑在格式字符串中使用“%lu”
+C:\Users\Yoruko\source\repos\WindowsProject3\WindowsProject3\ProcessHooker.cpp(1063,25): warning C4477: “swprintf”: 格式字符串“%llu”需要类型“unsigned __int64”的参数，但可变参数 5 拥有了类型“SIZE_T”
+C:\Users\Yoruko\source\repos\WindowsProject3\WindowsProject3\ProcessHooker.cpp(1063,25): message : 请考虑在格式字符串中使用“%lu”
+C:\Users\Yoruko\source\repos\WindowsProject3\WindowsProject3\ProcessHooker.cpp(253): warning C4715: “GetProcessInfo”: 不是所有的控件路径都返回值
+C:\Users\Yoruko\source\repos\WindowsProject3\WindowsProject3\ProcessHooker.cpp(233): warning C4172: 返回局部变量或临时变量的地址: szProcessPath
+C:\Users\Yoruko\source\repos\WindowsProject3\WindowsProject3\ProcessHooker.cpp(632): warning C4715: “processTransmitByPipe”: 不是所有的控件路径都返回值
   WindowsProject3.vcxproj -> C:\Users\Yoruko\source\repos\WindowsProject3\Debug\ProcessHooker.exe

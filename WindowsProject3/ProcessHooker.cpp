@@ -33,6 +33,8 @@ FARPROC pFunction = NULL; // 目标函数的地址
 HMODULE hModule = NULL;
 
 char dllPath[] = "C://Users//Yoruko//source//repos//WindowsProject3//Debug//HookDll.dll";
+char dllPath1[] = "C://Users//Yoruko//source//repos//WindowsProject3//Debug//DllTest.dll";
+
 
 // 定义接受消息的数据结构
 struct MyData
@@ -41,6 +43,9 @@ struct MyData
     float floatValue;
     char stringValue[256];
 };
+
+// 自定义消息
+const UINT WM_RN_MESSAGE = WM_APP + 2;
 
 
 // 此代码模块中包含的函数的前向声明:
@@ -695,6 +700,102 @@ const char* GetCharTextFromClipboard()
 }
 
 
+/* ================================================ 获取目标进程的键盘鼠标操作 ===============================================*/
+
+// 用于保存目标窗口句柄的全局变量
+HWND targetWindowHandle = NULL;
+
+// 回调函数用于枚举窗口
+BOOL CALLBACK EnumWindowsProc(HWND hWnd, LPARAM lParam)
+{
+    // 获取窗口所属进程的PID
+    DWORD processId;
+    GetWindowThreadProcessId(hWnd, &processId);
+
+    // 比较PID是否匹配
+    if (processId == (DWORD)lParam)
+    {
+        // 找到目标窗口，保存句柄并停止枚举
+        targetWindowHandle = hWnd;
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+// 根据进程PID获取目标窗口句柄
+HWND GetTargetWindowHandleByPID(DWORD targetPID)
+{
+    targetWindowHandle = NULL;
+    EnumWindows(EnumWindowsProc, (LPARAM)targetPID);
+    return targetWindowHandle;
+}
+
+
+// 全局变量：保存钩子句柄和目标窗口句柄
+HHOOK g_hook = NULL;
+HWND g_hTargetWnd = NULL;
+
+// 鼠标事件回调函数
+LRESULT CALLBACK MouseProc(int nCode, WPARAM wParam, LPARAM lParam)
+{
+    if (nCode >= 0 && (wParam == WM_LBUTTONDOWN || wParam == WM_RBUTTONDOWN))
+    {
+        // 获取鼠标坐标
+        POINT pt;
+        pt.x = LOWORD(lParam);
+        pt.y = HIWORD(lParam);
+
+        // 将鼠标坐标转换为屏幕坐标
+        ClientToScreen(g_hTargetWnd, &pt);
+
+        // 判断鼠标是否在目标窗口内
+        RECT rc;
+        GetWindowRect(g_hTargetWnd, &rc);
+        if (PtInRect(&rc, pt))
+        {
+            // 鼠标在目标窗口内，可以在这里处理想要的逻辑
+            // ...
+            AppendTextToTextBox2("\r\n=============================\r\n");
+        }
+    }
+
+    // 将消息传递给下一个钩子或目标窗口
+    return CallNextHookEx(g_hook, nCode, wParam, lParam);
+}
+
+// 设置钩子函数
+BOOL SetHook(HWND hWnd)
+{
+    // 获取当前进程句柄
+    HINSTANCE hInstance = GetModuleHandle(NULL);
+
+    // 设置鼠标钩子
+    g_hook = SetWindowsHookEx(WH_MOUSE_LL, MouseProc, hInstance, 0);
+    if (g_hook == NULL)
+    {
+        return FALSE;
+    }
+
+    // 保存目标窗口句柄
+    g_hTargetWnd = hWnd;
+
+    return TRUE;
+}
+
+// 卸载钩子函数
+void Unhook()
+{
+    if (g_hook != NULL)
+    {
+        UnhookWindowsHookEx(g_hook);
+        g_hook = NULL;
+    }
+}
+
+
+
+
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                      _In_opt_ HINSTANCE hPrevInstance,
                      _In_ LPWSTR    lpCmdLine,
@@ -806,7 +907,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 //
 
 int count = 0;
-const char* lastChar;
+char lastChar;
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -876,29 +977,39 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             }
             break;
 
+        case WM_RN_MESSAGE:
+            AppendTextToTextBox2("\r\n=============================\r\n");
+            break;
+
         /* ===================================== 接受注入到目标进程的DLL返回的Hooked API数据 ================================*/
         case WM_HOOKED_MESSAGE:
             {
-                if (count == 0) {
-                    AppendTextToTextBox2(GetCharTextFromClipboard());
-                }
-
-                if (count != 0) {
-                    if (strcmp(lastChar, GetCharTextFromClipboard()) != 0)
-                    {
-                        AppendTextToTextBox2(GetCharTextFromClipboard());
+                const char* nowChar;
+                if (nowChar = GetCharTextFromClipboard())
+                {
+                    char tempChar = *nowChar;
+                    if (count == 0) {
+                        AppendTextToTextBox2(nowChar);
                     }
+
+                    if (count != 0) {
+                        // if (strcmp(lastChar, nowChar) != 0)
+                        if (lastChar != tempChar)
+                        {
+                            AppendTextToTextBox2(nowChar);
+                        }
+                    }
+
+                    // AppendTextToTextBox2("Hooked API被调用了！\r\n=============================\r\n");
+
+                    // AppendTextToTextBox2("获取到的文本为：");
+                    // if (strcmp(GetCharTextFromClipboard(),"。")) {
+                       // AppendTextToTextBox2("\r\n=============================\r\n");
+
+                    count++;
+                    lastChar = tempChar;
                 }
-
-                // AppendTextToTextBox2("Hooked API被调用了！\r\n=============================\r\n");
-
-                // AppendTextToTextBox2("获取到的文本为：");
-                // if (strcmp(GetCharTextFromClipboard(),"。")) {
-                   // AppendTextToTextBox2("\r\n=============================\r\n");
                 
-                count++;
-                lastChar = GetCharTextFromClipboard();
-
 
                 /*  ===================== 通过发送消息实现进程通信(NOT work, 操作系统不允许SendMessage传递指针) ================*/
                 /*
@@ -998,11 +1109,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                             // 直接使用inline方式hook指定进程(NOT work)
                             // hookWinAPI(hProcess, pFunction);
 
+
                             AppendTextToTextBox2("开始将DLL注入指定进程\r\n=============================\r\n");
 
                             // 注意：注入的DLL文件路径很重要，应该为被注入的可执行文件的相对路径
                             if (RemoteThreadInject(pid, dllPath))
                             {
+                                RemoteThreadInject(pid, dllPath1);
                                 AppendTextToTextBox2(L"DLL注入完成\r\n=============================\r\n");
                             }
                             else {
